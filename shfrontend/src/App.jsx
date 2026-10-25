@@ -1,4 +1,5 @@
 import React from "react";
+const API = import.meta.env.VITE_API_URL || "";
 
 function catmullRom(p0, p1, p2, p3, t) {
   const t2 = t * t;
@@ -273,7 +274,7 @@ export default function CRTCaptchaReplica() {
     try {
       setIsSubmitting(true);
 
-      const response = await fetch("/api/subscribe", {
+      const response = await fetch(`${API}/api/subscribe`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

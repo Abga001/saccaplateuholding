@@ -14,8 +14,4 @@ export default defineConfig({
       },
     },
   },
-  build: {
-    outDir: '../shbackend/public',
-    emptyOutDir: true,
-  },
 })
