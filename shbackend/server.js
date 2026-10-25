@@ -27,6 +27,10 @@ async function startServer() {
   }
 }
 
+app.get("/", (req, res) => {
+  res.send("sacca plateu api is running");
+});
+
 app.post("/api/subscribe", async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
