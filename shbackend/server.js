@@ -1,39 +1,36 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import { MongoClient } from "mongodb";
 
 dotenv.config();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+let db;
 const client = new MongoClient(process.env.MONGODB_URI);
 
-let db;
-
-async function startServer() {
-  try {
-    await client.connect();
+client
+  .connect()
+  .then(() => {
     db = client.db("saccaplath");
     console.log("Connected to MongoDB");
-
-    app.listen(process.env.PORT || 3001, () => {
-      console.log(`Server running on port ${process.env.PORT || 3001}`);
-    });
-  } catch (error) {
-    console.error("MongoDB connection failed:", error);
-  }
-}
-
-app.get("/", (req, res) => {
-  res.send("sacca plateu api is running");
-});
+  })
+  .catch((error) => console.error("MongoDB connection failed:", error));
 
 app.post("/api/subscribe", async (req, res) => {
   try {
-    const email = String(req.body.email || "").trim().toLowerCase();
+    if (!db) {
+      return res.status(503).json({ message: "database not ready, try again shortly" });
+    }
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ message: "Invalid email address" });
@@ -41,16 +38,11 @@ app.post("/api/subscribe", async (req, res) => {
 
     const collection = db.collection("userupdate");
 
-    const existing = await collection.findOne({ email });
-
-    if (existing) {
+    if (await collection.findOne({ email })) {
       return res.json({ message: "Email already subscribed" });
     }
 
-    await collection.insertOne({
-      email,
-      subscribedAt: new Date(),
-    });
+    await collection.insertOne({ email, subscribedAt: new Date() });
 
     res.json({ message: "Subscribed successfully" });
   } catch (error) {
@@ -59,4 +51,12 @@ app.post("/api/subscribe", async (req, res) => {
   }
 });
 
-startServer();
+// Serve the built frontend (after the API routes)
+app.use(express.static(path.join(__dirname, "public")));
+
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
