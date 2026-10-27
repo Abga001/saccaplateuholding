@@ -1,6 +1,68 @@
 import React from "react";
 const API = import.meta.env.VITE_API_URL || "";
 
+/* ------------------------------------------------------------------ */
+/*  Responsive stage                                                   */
+/*  The design is laid out on a fixed "stage" (in design pixels) and   */
+/*  the whole stage is scaled to fit the screen, like a game UI.       */
+/*  Phones get a narrower, stacked layout so the text stays readable.  */
+/* ------------------------------------------------------------------ */
+
+const LAYOUTS = {
+  // Desktop / tablet / landscape: orb on the left, text on the right
+  wide: {
+    w: 800,
+    h: 400,
+    maxScale: 0.72, // matches the original desktop size; raise for bigger on large screens
+    trail: { left: 0, top: 0, scale: 1.15 },
+    text: { left: 262, top: 115 },
+  },
+  // Phones in portrait: smaller orb above, text below
+  narrow: {
+    w: 560,
+    h: 460,
+    maxScale: 1,
+    trail: { left: 0, top: 0, scale: 0.8 },
+    text: { left: 20, top: 170 },
+  },
+};
+
+const NARROW_BREAKPOINT = 700; // px
+const BUTTON_AREA = 150; // px reserved at the bottom for OK / CANCEL
+
+function getStage() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const layout = vw < NARROW_BREAKPOINT ? LAYOUTS.narrow : LAYOUTS.wide;
+  const availW = vw * 0.92;
+  const availH = Math.max(vh - BUTTON_AREA, 220);
+  const scale = Math.min(layout.maxScale, availW / layout.w, availH / layout.h);
+  return { layout, scale };
+}
+
+function useStage() {
+  const [stage, setStage] = React.useState(getStage);
+
+  React.useEffect(() => {
+    let lastWidth = window.innerWidth;
+
+    const onResize = () => {
+      // Ignore height-only changes: on phones the keyboard opening and the
+      // address bar hiding change the height and would make the layout jump.
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
+      setStage(getStage());
+    };
+
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return stage;
+}
+
+/* ------------------------------------------------------------------ */
+
 function catmullRom(p0, p1, p2, p3, t) {
   const t2 = t * t;
   const t3 = t2 * t;
@@ -37,6 +99,12 @@ function OrbitalGhostTrail(props) {
   const [time, setTime] = React.useState(0);
 
   React.useEffect(() => {
+    // Respect the "reduce motion" accessibility setting
+    const reduceMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (reduceMotion) return;
+
     let frame;
     let start;
     const loop = (ts) => {
@@ -220,7 +288,7 @@ function FuzzyText(props) {
             : "0.6px rgba(0,0,0,0.85)",
           fontFamily:
             'Arial, Helvetica, "Nimbus Sans", "Liberation Sans", sans-serif',
-          ...style, // 👈 add this line
+          ...style,
         }}
       >
         {children}
@@ -229,8 +297,25 @@ function FuzzyText(props) {
   );
 }
 
+// Shared style for the OK / CANCEL labels; font size shrinks on small screens
+const buttonLabelStyle = {
+  fontFamily: '"Roboto Condensed", "Arial Narrow", sans-serif',
+  fontWeight: 700,
+  fontSize: "clamp(22px, 5vw, 34px)",
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "#ffffff",
+  WebkitTextStroke: "1.5px rgba(0,0,0,0.95)",
+  textShadow: `
+    0 0 2px rgba(0,0,0,0.9),
+    0 0 6px rgba(255,255,255,0.2)
+  `,
+  transform: "scaleY(1.05)", // subtle PS2 stretch
+};
+
 export default function CRTCaptchaReplica() {
   const audioRef = React.useRef(null);
+  const { layout, scale } = useStage();
 
   const [email, setEmail] = React.useState("");
   const [touched, setTouched] = React.useState(false);
@@ -317,7 +402,7 @@ export default function CRTCaptchaReplica() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden relative">
+    <div className="h-dvh w-full bg-black flex items-center justify-center overflow-hidden relative pb-20">
       {/* AMBIENT AUDIO */}
       <audio ref={audioRef} src="/ocean.mp3" loop autoPlay />
 
@@ -333,20 +418,6 @@ export default function CRTCaptchaReplica() {
           opacity: 0.92,
         }}
       />
-
-      {/* <video
-        className="absolute inset-0 w-full h-full object-cover scale-[1.10]"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="auto"
-        src="/backdrop.mp4"
-        style={{
-          filter: "brightness(0.9) contrast(1.1)",
-          opacity: 0.92,
-        }}
-      /> */}
 
       {/* dark overlay to match PS2 mood */}
       <div className="absolute inset-0 bg-black/20" />
@@ -371,15 +442,40 @@ export default function CRTCaptchaReplica() {
         }}
       />
 
-      <div className="relative w-full max-w-[1100px] h-[520px] scale-[0.72] origin-center">
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] h-[260px]">
-          <div className="absolute left-[-85px] top-[-6px] opacity-90">
-            <div className="relative w-[292px] h-[292px] scale-[1.15]">
-              <OrbitalGhostTrail centerX={146} centerY={146} scale={1.25} />
-            </div>
+      {/* RESPONSIVE STAGE: sized to the scaled design so it centres correctly */}
+      <div
+        className="relative z-10 shrink-0"
+        style={{ width: layout.w * scale, height: layout.h * scale }}
+      >
+        <div
+          className="absolute left-0 top-0"
+          style={{
+            width: layout.w,
+            height: layout.h,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        >
+          {/* ORB */}
+          <div
+            className="absolute opacity-90"
+            style={{
+              left: layout.trail.left,
+              top: layout.trail.top,
+              width: 292,
+              height: 292,
+              transform: `scale(${layout.trail.scale})`,
+              transformOrigin: "top left",
+            }}
+          >
+            <OrbitalGhostTrail centerX={146} centerY={146} scale={1.25} />
           </div>
 
-          <div className="absolute left-[155px] top-[88px] text-left">
+          {/* TEXT + INPUT */}
+          <div
+            className="absolute text-left"
+            style={{ left: layout.text.left, top: layout.text.top }}
+          >
             <div className="absolute -inset-x-6 -top-3 h-16 bg-[radial-gradient(circle_at_40%_50%,rgba(135,185,255,0.16),transparent_62%)] blur-2xl opacity-75" />
 
             <FuzzyText
@@ -434,6 +530,13 @@ export default function CRTCaptchaReplica() {
                 <div className="absolute inset-[18px_26px_18px_28px] flex items-center">
                   <input
                     type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    enterKeyHint="send"
+                    aria-label="email address"
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
@@ -469,6 +572,8 @@ export default function CRTCaptchaReplica() {
               </div>
 
               <div
+                role="status"
+                aria-live="polite"
                 className="mt-2 ml-1 text-[16px] tracking-[0.03em] min-h-[24px]"
                 style={{
                   color: showError
@@ -505,40 +610,24 @@ export default function CRTCaptchaReplica() {
         }}
       />
 
-      {/* PLAYSTATION STYLE BUTTONS */}
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-12 items-center">
+      {/* PLAYSTATION STYLE BUTTONS (clear of the iPhone home bar) */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 z-20 flex gap-8 sm:gap-12 items-center"
+        style={{ bottom: "max(2rem, calc(env(safe-area-inset-bottom) + 1rem))" }}
+      >
         <button
           type="button"
           onClick={subscribe}
           disabled={isSubmitting}
-          className="hover:scale-110 transition-transform duration-150 flex items-center gap-3 bg-transparent border-0 p-0 cursor-pointer disabled:opacity-60"
+          className="hover:scale-110 active:scale-95 transition-transform duration-150 flex items-center gap-2 sm:gap-3 bg-transparent border-0 p-2 cursor-pointer touch-manipulation disabled:opacity-60"
         >
           <img
             src="/x-button.png"
-            alt="X button"
-            className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(120,200,255,0.25)]"
+            alt=""
+            className="w-6 h-6 sm:w-8 sm:h-8 object-contain drop-shadow-[0_0_8px_rgba(120,200,255,0.25)]"
             draggable="false"
           />
-          <span
-            className="text-[18px] tracking-wide"
-            style={{
-              fontFamily: '"Roboto Condensed", "Arial Narrow", sans-serif',
-              fontWeight: 700,
-              fontSize: "34px",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#ffffff",
-
-              WebkitTextStroke: "1.5px rgba(0,0,0,0.95)",
-
-              textShadow: `
-          0 0 2px rgba(0,0,0,0.9),
-          0 0 6px rgba(255,255,255,0.2)
-        `,
-
-              transform: "scaleY(1.05)", // subtle PS2 stretch
-            }}
-          >
+          <span style={buttonLabelStyle}>
             {isSubmitting ? "Sending..." : "Ok"}
           </span>
         </button>
@@ -546,36 +635,15 @@ export default function CRTCaptchaReplica() {
         <button
           type="button"
           onClick={clearInput}
-          className="hover:scale-110 transition-transform duration-150 flex items-center gap-3 bg-transparent border-0 p-0 cursor-pointer"
+          className="hover:scale-110 active:scale-95 transition-transform duration-150 flex items-center gap-2 sm:gap-3 bg-transparent border-0 p-2 cursor-pointer touch-manipulation"
         >
           <img
             src="/o-button.png"
-            alt="O button"
-            className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(255,140,140,0.25)]"
+            alt=""
+            className="w-6 h-6 sm:w-8 sm:h-8 object-contain drop-shadow-[0_0_8px_rgba(255,140,140,0.25)]"
             draggable="false"
           />
-          <span
-            className="text-[18px] tracking-wide"
-            style={{
-              fontFamily: '"Roboto Condensed", "Arial Narrow", sans-serif',
-              fontWeight: 700,
-              fontSize: "34px",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#ffffff",
-
-              WebkitTextStroke: "1.5px rgba(0,0,0,0.95)",
-
-              textShadow: `
-          0 0 2px rgba(0,0,0,0.9),
-          0 0 6px rgba(255,255,255,0.2)
-        `,
-
-              transform: "scaleY(1.05)",
-            }}
-          >
-            CANCEL
-          </span>
+          <span style={buttonLabelStyle}>CANCEL</span>
         </button>
       </div>
     </div>
